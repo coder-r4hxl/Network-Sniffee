@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from datetime import datetime
 from scapy.all import sniff, get_if_list
@@ -52,7 +53,17 @@ def parse_args():
         action="store_true",
         help="List available network interfaces and exit",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.count < 0:
+        print("Error: --count must be an integer greater than or equal to 0")
+        sys.exit(2)
+
+    if args.port is not None and not (1 <= args.port <= 65535):
+        print("Error: --port must be an integer from 1 to 65535")
+        sys.exit(2)
+
+    return args
 
 
 def build_bpf_filter(protocol, port):
@@ -82,6 +93,30 @@ def build_bpf_filter(protocol, port):
     return " and ".join(parts)
 
 
+def open_output_file(filepath):
+    """Safely open an output file with permissions 0o600 and symlink rejection.
+
+    Args:
+        filepath (str): Path to the output log file.
+
+    Returns:
+        file object: Opened file in append mode.
+    """
+    if os.path.islink(filepath):
+        print(f"Error: output file path '{filepath}' is a symbolic link.")
+        sys.exit(1)
+
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(filepath, flags, 0o600)
+        return os.fdopen(fd, "a")
+    except OSError as e:
+        print(f"Error: failed to open output file '{filepath}': {e}")
+        sys.exit(1)
+
+
 def main():
     """Main entry point for the network sniffer application."""
     args = parse_args()
@@ -95,7 +130,7 @@ def main():
 
     out_file = None
     if args.output:
-        out_file = open(args.output, "a")
+        out_file = open_output_file(args.output)
         start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         out_file.write(f"# Capture started {start_ts}\n")
         out_file.flush()
