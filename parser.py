@@ -76,12 +76,13 @@ def parse_packet(packet):
         return None
 
 
-def format_packet(info, number):
+def format_packet(info, number, show_payload=False):
     """Format parsed packet metadata into a human-readable string.
 
     Args:
         info (dict): Parsed packet information returned by parse_packet.
         number (int): Sequential packet number.
+        show_payload (bool): Whether to include payload preview in output (default False for privacy).
 
     Returns:
         str: Formatted one-line summary of the packet.
@@ -91,4 +92,8 @@ def format_packet(info, number):
     else:
         addr_str = f"{info['src_ip']} -> {info['dst_ip']}"
 
-    return f"[#{number}] {info['timestamp']} | {info['protocol']} | {addr_str} | {info['length']} bytes | payload: {info['payload']}"
+    base_fmt = f"[#{number}] {info['timestamp']} | {info['protocol']} | {addr_str} | {info['length']} bytes"
+
+    if show_payload:
+        return f"{base_fmt} | payload: {info['payload']}"
+    return base_fmt

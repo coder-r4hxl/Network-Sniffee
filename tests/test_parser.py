@@ -85,7 +85,7 @@ def test_payload_non_printable_bytes():
     assert parsed["payload"] == "Hello..World.!"
 
 
-def test_format_packet_tcp():
+def test_format_packet_metadata_default():
     info = {
         "timestamp": "2026-10-23 08:33:01",
         "protocol": "TCP",
@@ -97,10 +97,26 @@ def test_format_packet_tcp():
         "payload": "GET / HTTP",
     }
     formatted = format_packet(info, 1)
+    assert formatted == "[#1] 2026-10-23 08:33:01 | TCP | 192.168.1.5:51234 -> 142.250.1.1:443 | 66 bytes"
+    assert "payload:" not in formatted
+
+
+def test_format_packet_tcp_show_payload():
+    info = {
+        "timestamp": "2026-10-23 08:33:01",
+        "protocol": "TCP",
+        "src_ip": "192.168.1.5",
+        "src_port": 51234,
+        "dst_ip": "142.250.1.1",
+        "dst_port": 443,
+        "length": 66,
+        "payload": "GET / HTTP",
+    }
+    formatted = format_packet(info, 1, show_payload=True)
     assert formatted == "[#1] 2026-10-23 08:33:01 | TCP | 192.168.1.5:51234 -> 142.250.1.1:443 | 66 bytes | payload: GET / HTTP"
 
 
-def test_format_packet_icmp():
+def test_format_packet_icmp_metadata_default():
     info = {
         "timestamp": "2026-10-23 08:33:01",
         "protocol": "ICMP",
@@ -112,7 +128,7 @@ def test_format_packet_icmp():
         "payload": "",
     }
     formatted = format_packet(info, 2)
-    assert formatted == "[#2] 2026-10-23 08:33:01 | ICMP | 192.168.1.5 -> 8.8.8.8 | 28 bytes | payload: "
+    assert formatted == "[#2] 2026-10-23 08:33:01 | ICMP | 192.168.1.5 -> 8.8.8.8 | 28 bytes"
 
 
 def test_build_bpf_filter():

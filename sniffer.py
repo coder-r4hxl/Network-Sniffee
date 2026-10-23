@@ -78,6 +78,11 @@ def parse_args(args=None):
         help="Output log file path",
     )
     parser.add_argument(
+        "--show-payload",
+        action="store_true",
+        help="Enable payload preview output (WARNING: May expose sensitive data in terminal/logs)",
+    )
+    parser.add_argument(
         "--list-interfaces",
         action="store_true",
         help="List available network interfaces and exit",
@@ -197,7 +202,7 @@ def main():
         else:
             counts["OTHER"] += 1
 
-        formatted = format_packet(info, packet_count)
+        formatted = format_packet(info, packet_count, show_payload=args.show_payload)
         print(formatted)
         if out_file:
             write_log(out_file, args.output, formatted)
