@@ -44,6 +44,24 @@ def test_parse_packet_icmp():
     assert parsed["payload"] == ""
 
 
+def test_icmp_payload():
+    pkt = IP() / ICMP() / Raw(b"hello")
+    parsed = parse_packet(pkt)
+    assert parsed is not None
+    assert parsed["protocol"] == "ICMP"
+    assert parsed["payload"] == "hello"
+
+
+def test_fragment_classification():
+    pkt = IP(proto=6, frag=185) / Raw(b"x" * 20)
+    parsed = parse_packet(pkt)
+    assert parsed is not None
+    assert parsed["protocol"] == "TCP"
+    assert parsed["src_port"] is None
+    assert parsed["dst_port"] is None
+    assert parsed["payload"] == ""
+
+
 def test_parse_non_ip_packet():
     pkt = Ether() / ARP()
     parsed = parse_packet(pkt)

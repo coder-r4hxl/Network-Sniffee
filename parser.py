@@ -42,8 +42,17 @@ def parse_packet(packet):
             payload_bytes = bytes(udp_layer.payload)
         elif packet.haslayer(ICMP):
             protocol = "ICMP"
+            payload_bytes = bytes(packet[ICMP].payload)
         else:
-            protocol = "OTHER"
+            proto_num = getattr(ip_layer, "proto", None)
+            if proto_num == 6:
+                protocol = "TCP"
+            elif proto_num == 17:
+                protocol = "UDP"
+            elif proto_num == 1:
+                protocol = "ICMP"
+            else:
+                protocol = "OTHER"
 
         if payload_bytes:
             truncated = payload_bytes[:64]

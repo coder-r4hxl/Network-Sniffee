@@ -7,8 +7,37 @@ from scapy.error import Scapy_Exception
 from parser import parse_packet, format_packet
 
 
-def parse_args():
+class StopCapture(Exception):
+    """Exception raised when packet capture needs to stop cleanly due to log write error."""
+    pass
+
+
+def port_type(value):
+    """Validate port argument is an integer between 1 and 65535.
+
+    Args:
+        value (str): Port argument value.
+
+    Returns:
+        int: Validated port number.
+
+    Raises:
+        argparse.ArgumentTypeError: If value is not an integer or out of range.
+    """
+    try:
+        val = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("port must be between 1 and 65535")
+    if not (1 <= val <= 65535):
+        raise argparse.ArgumentTypeError("port must be between 1 and 65535")
+    return val
+
+
+def parse_args(args=None):
     """Parse command-line arguments for the network sniffer.
+
+    Args:
+        args (list, optional): Argument list to parse. Defaults to sys.argv[1:].
 
     Returns:
         argparse.Namespace: Parsed command-line arguments.
@@ -37,7 +66,7 @@ def parse_args():
     )
     parser.add_argument(
         "--port",
-        type=int,
+        type=port_type,
         default=None,
         help="Port filter",
     )
@@ -53,17 +82,13 @@ def parse_args():
         action="store_true",
         help="List available network interfaces and exit",
     )
-    args = parser.parse_args()
+    parsed_args = parser.parse_args(args)
 
-    if args.count < 0:
+    if parsed_args.count < 0:
         print("Error: --count must be an integer greater than or equal to 0")
         sys.exit(2)
 
-    if args.port is not None and not (1 <= args.port <= 65535):
-        print("Error: --port must be an integer from 1 to 65535")
-        sys.exit(2)
-
-    return args
+    return parsed_args
 
 
 def build_bpf_filter(protocol, port):
@@ -103,7 +128,7 @@ def open_output_file(filepath):
         file object: Opened file in append mode.
     """
     if os.path.islink(filepath):
-        print(f"Error: output file path '{filepath}' is a symbolic link.")
+        print(f"Error: cannot open output file '{filepath}': File is a symbolic link")
         sys.exit(1)
 
     try:
@@ -113,8 +138,30 @@ def open_output_file(filepath):
         fd = os.open(filepath, flags, 0o600)
         return os.fdopen(fd, "a")
     except OSError as e:
-        print(f"Error: failed to open output file '{filepath}': {e}")
+        print(f"Error: cannot open output file '{filepath}': {e.strerror}")
         sys.exit(1)
+
+
+def write_log(out_file, filepath, line):
+    """Write a line to the output log file and flush, handling OSError failures.
+
+    Args:
+        out_file (file object): File object to write to.
+        filepath (str): Path to the log file for error reporting.
+        line (str): Line string to write.
+
+    Raises:
+        StopCapture: If writing to the file fails due to OSError or ValueError.
+    """
+    if not out_file:
+        return
+    try:
+        out_file.write(line + "\n")
+        out_file.flush()
+    except (OSError, ValueError) as e:
+        err_msg = getattr(e, "strerror", str(e))
+        print(f"Error: cannot write to '{filepath}': {err_msg}")
+        raise StopCapture()
 
 
 def main():
@@ -132,8 +179,7 @@ def main():
     if args.output:
         out_file = open_output_file(args.output)
         start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        out_file.write(f"# Capture started {start_ts}\n")
-        out_file.flush()
+        write_log(out_file, args.output, f"# Capture started {start_ts}")
 
     packet_count = 0
     counts = {"TCP": 0, "UDP": 0, "ICMP": 0, "OTHER": 0}
@@ -154,9 +200,9 @@ def main():
         formatted = format_packet(info, packet_count)
         print(formatted)
         if out_file:
-            out_file.write(formatted + "\n")
-            out_file.flush()
+            write_log(out_file, args.output, formatted)
 
+    exit_code = 0
     try:
         sniff(
             iface=args.interface,
@@ -165,37 +211,41 @@ def main():
             count=args.count,
             store=False,
         )
+    except StopCapture:
+        pass
     except KeyboardInterrupt:
         pass
     except PermissionError:
         print(
             "Error: administrator/root privileges required. Use sudo (Linux/macOS) or run as Administrator (Windows)."
         )
-        if out_file:
-            out_file.close()
-        sys.exit(1)
-    except (OSError, Scapy_Exception, ValueError):
+        exit_code = 1
+    except (OSError, Scapy_Exception):
         print(f"Error: invalid interface '{args.interface}'.")
+        exit_code = 1
+    finally:
+        summary_lines = [
+            "--- Capture Summary ---",
+            f"Total packets: {packet_count}",
+            f"TCP: {counts['TCP']}",
+            f"UDP: {counts['UDP']}",
+            f"ICMP: {counts['ICMP']}",
+            f"OTHER: {counts['OTHER']}",
+        ]
+        summary_text = "\n".join(summary_lines)
+        print(summary_text)
+
         if out_file:
-            out_file.close()
-        sys.exit(1)
+            try:
+                write_log(out_file, args.output, summary_text)
+            except StopCapture:
+                pass
+            try:
+                out_file.close()
+            except (OSError, ValueError):
+                pass
 
-    summary_lines = [
-        "--- Capture Summary ---",
-        f"Total packets: {packet_count}",
-        f"TCP: {counts['TCP']}",
-        f"UDP: {counts['UDP']}",
-        f"ICMP: {counts['ICMP']}",
-        f"OTHER: {counts['OTHER']}",
-    ]
-    summary_text = "\n".join(summary_lines)
-    print(summary_text)
-
-    if out_file:
-        out_file.write(summary_text + "\n")
-        out_file.close()
-
-    sys.exit(0)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
